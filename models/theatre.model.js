@@ -17,7 +17,7 @@ const theatreSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
-  noOfSeats: {
+  numSeats: {
     type: Number,
     required: true,
   },
