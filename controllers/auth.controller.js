@@ -3,24 +3,30 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const SECRET_KEY = require("../configs/auth.config");
 const { USERTYPES, USER_STATUS } = require("./../constant");
+const admin = require("../configs/firebase.config");
 
-function signup(req, res) {
+async function signup(req, res) {
   const { name, email, userId, password, userType } = req.body;
-
-  const userObj = {
-    name,
-    email,
-    userId,
-    password: bcrypt.hashSync(password, 10),
-    userType,
-    userStatus:
-      userType === USERTYPES.CUSTOMER
-        ? USER_STATUS.APPROVED
-        : USER_STATUS.PENDING,
-  };
-
-  User.create(userObj)
-    .then((data) => {
+  try {
+    const userRecord = await admin
+      .auth()
+      .createUser({ email: email, password: password });
+    const userObj = {
+      name,
+      email,
+      userId,
+      password: bcrypt.hashSync(password, 10),
+      userType,
+      userStatus:
+        userType === USERTYPES.CUSTOMER
+          ? USER_STATUS.APPROVED
+          : USER_STATUS.PENDING,
+      firebaseUid: userRecord.uid,
+    };
+    if (userType === "ADMIN") {
+      await admin.auth().setCustomUserClaims(userRecord.uid, { admin: true });
+    }
+    User.create(userObj).then((data) => {
       res.status(200).send({
         _id: data._id,
         name: data.name,
@@ -28,19 +34,22 @@ function signup(req, res) {
         userId: data.userId,
         userType: data.userType,
         userStatus: data.userStatus,
+        firebaseUid: data.firebaseUid,
       });
-    })
-    .catch((err) => res.status(400).send(err));
+    });
+  } catch (error) {
+    res.status(400).send(`Error creating user: ${error.message}`);
+  }
 }
 
 async function signin(req, res) {
   console.log("user signing in is", req.body);
-  const { userId, password } = req.body;
-  const user = await User.findOne({ userId: userId });
+  const { email, password } = req.body;
+  const user = await User.findOne({ email: email });
 
   if (user === null) {
     res.status(401).send({
-      message: "Failed! UserId does not exist",
+      message: "Failed! user does not exist",
     });
     return;
   }
@@ -85,7 +94,25 @@ async function signin(req, res) {
   });
 }
 
+const resetPassword = async (req, res) => {
+  const { email, newPassword } = req.body;
+  console.log(email);
+  console.log(newPassword);
+
+  const user = await User.findOne({ email: email });
+
+  if (!user) {
+    res.status(201).send({ message: "user not found" });
+  }
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  user.password = hashedPassword;
+  await user.save();
+
+  res.status(200).send({ message: "password changed successfully" });
+};
+
 module.exports = {
   signup,
   signin,
+  resetPassword,
 };
